@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 const fs = require('fs');
 
-const CRED_TOKEN = /(?<![\w.-])(?:_secrets(?![\w.-])|\.credentials(?![\w.-])|sftp\.json(?![\w.])|wp-config\.php(?![\w.])|token\.json(?![\w.])|id_rsa(?![\w.])|id_ed25519(?![\w.])|id_ecdsa(?![\w.])|\.netrc(?![\w.])|\.git-credentials(?![\w.])|\.pgpass(?![\w.])|\.env(?:\.[\w-]+|rc)?(?![\w]))|\.(?:pem|key|p12|pfx|ppk)(?![\w.])/i;
+const CRED_TOKEN = /(?<![\w.-])(?:_secrets(?![\w.-])|\.credentials(?![\w.-])|sftp\.json(?![\w.])|wp-config\.php(?![\w.])|token\.json(?![\w.])|id_rsa(?![\w.])|id_ed25519(?![\w.])|id_ecdsa(?![\w.])|\.netrc(?![\w.])|\.git-credentials(?![\w.])|\.pgpass(?![\w.])|\.aws\/credentials(?![\w.-])|\.aws\/config(?![\w.-])|\.kube\/config(?![\w.-])|\.docker\/config\.json(?![\w.-])|\.env(?:\.[\w-]+|rc)?(?![\w]))|\.(?:pem|key|p12|pfx|ppk)(?![\w.])/i;
+const ENV_DUMP = /^(?:sudo\s+|command\s+)?(?:printenv|env)(?:\.exe)?(?:\s+-(?!(?:-?help|-?version|h|V)(?![\w-]))\S+)*\s*$|^export\s+-p\s*$|^(?:Get-ChildItem|Get-Item|gci|ls|dir)\b[^|;&]*(?<![\w-])env:(?![\\/]?\w)/i;
 const DUMP_VERB = /(?:^|[\s;&|(`\/])(cat|bat|batcat|head|tail|less|more|nl|xxd|od|strings|type|Get-Content|gc)(?:\.exe)?\b/i;
 const GREP_VERB = /(?:^|[\s;&|(`\/])(grep|egrep|fgrep|rg|findstr|Select-String|sls)(?:\.exe)?\b/i;
 const SCRIPT_VERB = /(?:^|[\s;&|(`\/])(sed|awk|jq)(?:\.exe)?\b/i;
@@ -25,6 +26,10 @@ function isCredPath(p) {
   const base = parts[parts.length - 1] || '';
   if (parts.indexOf('_secrets') !== -1 || parts.indexOf('.credentials') !== -1) return true;
   if (['sftp.json', 'wp-config.php', 'token.json', 'id_rsa', 'id_ed25519', 'id_ecdsa', '.netrc', '.git-credentials', '.pgpass'].includes(base)) return true;
+  const parent = parts[parts.length - 2] || '';
+  if (parent === '.aws' && (base === 'credentials' || base === 'config')) return true;
+  if (parent === '.kube' && base === 'config') return true;
+  if (parent === '.docker' && base === 'config.json') return true;
   if (base === '.env' || base === '.envrc' || base.startsWith('.env.')) return true;
   if (/\.(pem|key|p12|pfx|ppk)$/.test(base)) return true;
   return false;
@@ -119,6 +124,7 @@ function segmentBlocks(segMasked, store) {
 }
 
 function codeBlocks(body) {
+  if (envDumps(body, [])) return true;
   if (!credInText(body)) return false;
   if (READ_PRIMITIVE.test(body)) return true;
   return body.split(/\n/).some(function (line) {
@@ -130,15 +136,23 @@ function codeBlocks(body) {
   });
 }
 
+function envDumps(masked, store) {
+  return masked.split(/[|;&\n]+/).some(function (seg) {
+    return ENV_DUMP.test(unmask(seg, store).trim());
+  });
+}
+
 function cmdTouchesCred(cmd) {
-  if (!cmd || !credInText(cmd)) return false;
+  if (!cmd) return false;
   const her = extractHeredocs(cmd);
   const joined = her.text.replace(/\\\r?\n/g, ' ');
   const mq = maskQuotes(joined);
-  const segments = mq.masked.split(/[|;&\n]+/);
-  if (segments.some(function (s) { return segmentBlocks(s, mq.store); })) return true;
+  if (envDumps(mq.masked, mq.store)) return true;
   const codes = her.codeBodies.concat(inlineCode(joined), hereStrings(joined));
-  return codes.some(codeBlocks);
+  if (codes.some(codeBlocks)) return true;
+  if (!credInText(cmd)) return false;
+  const segments = mq.masked.split(/[|;&\n]+/);
+  return segments.some(function (s) { return segmentBlocks(s, mq.store); });
 }
 
 function readStdin() {
@@ -175,12 +189,14 @@ try {
 
 if (blocked) {
   process.stderr.write(
-    'BLOCKED by cred-file guard: this command READS a credential/secret file ' +
-    '(.env, wp-config.php, sftp.json, id_rsa, *.key/.pem, _secrets/*, .credentials/*, and similar) ' +
-    'into context. That would put plaintext secrets into the transcript, which is sent to the model ' +
-    'provider and persisted in session logs. Run a script that consumes the file machine-side and ' +
-    'prints only success/fail plus non-secret metadata instead. Merely MENTIONING these filenames ' +
-    '(grep/search patterns, prose, notes) is allowed and does not trigger this guard.'
+    'BLOCKED by cred-file guard: this command would READ credentials into context, either a ' +
+    'credential/secret file (.env, wp-config.php, sftp.json, id_rsa, *.key/.pem, _secrets/*, ' +
+    '.credentials/*, .aws/credentials, .kube/config, and similar) or a bulk environment-variable ' +
+    'dump (printenv, bare env, gci env:). That would put plaintext secrets into the transcript, ' +
+    'which is sent to the model provider and persisted in session logs. Run a script that consumes ' +
+    'the value machine-side and prints only success/fail plus non-secret metadata instead, or read a ' +
+    'single non-secret variable by name. Merely MENTIONING these filenames (grep/search patterns, ' +
+    'prose, notes) is allowed and does not trigger this guard.'
   );
   process.exit(2);
 }

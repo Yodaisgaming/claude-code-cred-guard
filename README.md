@@ -1,6 +1,6 @@
 # claude-code-cred-guard
 
-A single-file, zero-dependency PreToolUse hook for [Claude Code](https://code.claude.com) that stops the agent from **reading credential files into its context** — without false-positives when those filenames are merely *mentioned* (search patterns, prose, notes, or invoking scripts that consume credentials machine-side).
+A single-file, zero-dependency PreToolUse hook for [Claude Code](https://code.claude.com) that stops the agent from **reading credentials into its context** — credential files *and* bulk environment-variable dumps — without false-positives when those filenames are merely *mentioned* (search patterns, prose, notes, or invoking scripts that consume credentials machine-side).
 
 ```
 cat .env                                   -> BLOCKED
@@ -8,12 +8,18 @@ python -c "print(open('.env').read())"     -> BLOCKED
 grep pass "$HOME/.env"                     -> BLOCKED
 bash -c "sed -n '1,20p' wp-config.php"     -> BLOCKED
 git show mybranch:wp-config.php            -> BLOCKED
+cat ~/.aws/credentials                     -> BLOCKED
+printenv                                    -> BLOCKED (bulk env dump)
+env | grep DB_PASSWORD                     -> BLOCKED (bulk env dump)
+gci Env:                                    -> BLOCKED (PowerShell env drive)
 
 grep -n "sftp.json|token" client.py        -> allowed (search pattern, not a read)
 python tools/deploy.py prod file.php       -> allowed (script consumes creds machine-side)
 cat >> NOTES.md <<'EOF' ... sftp.json ...  -> allowed (prose mention)
 sed -n '/sftp.json/p' client.py            -> allowed (sed program arg, not a target)
 git commit -m "harden wp-config.php"       -> allowed (commit message, not a read)
+printenv PATH                              -> allowed (single named var, not a dump)
+env NODE_ENV=prod node app.js              -> allowed (assignment prefix, runs a command)
 ```
 
 ## Why
@@ -84,12 +90,14 @@ Windows — use the literal absolute path (env-var expansion depends on which sh
 The hook exits 2 and writes an explanation to stderr, which Claude Code feeds back to the model so it can self-correct:
 
 ```
-BLOCKED by cred-file guard: this command READS a credential/secret file (.env, wp-config.php,
-sftp.json, id_rsa, *.key/.pem, _secrets/*, .credentials/*, and similar) into context. That would
-put plaintext secrets into the transcript, which is sent to the model provider and persisted in
-session logs. Run a script that consumes the file machine-side and prints only success/fail plus
-non-secret metadata instead. Merely MENTIONING these filenames (grep/search patterns, prose,
-notes) is allowed and does not trigger this guard.
+BLOCKED by cred-file guard: this command would READ credentials into context, either a
+credential/secret file (.env, wp-config.php, sftp.json, id_rsa, *.key/.pem, _secrets/*,
+.credentials/*, .aws/credentials, .kube/config, and similar) or a bulk environment-variable dump
+(printenv, bare env, gci env:). That would put plaintext secrets into the transcript, which is sent
+to the model provider and persisted in session logs. Run a script that consumes the value
+machine-side and prints only success/fail plus non-secret metadata instead, or read a single
+non-secret variable by name. Merely MENTIONING these filenames (grep/search patterns, prose, notes)
+is allowed and does not trigger this guard.
 ```
 
 ## Customizing
@@ -99,7 +107,9 @@ The credential filenames are defined in **two places** that must stay in sync (o
 - `CRED_TOKEN` — the regex used to detect a credential name anywhere in a Bash command.
 - `isCredPath()` — the basename/segment list used for the `Read` and `Grep` tool paths.
 
-Edit **both** or the two paths diverge (a filename blocked in `cat` would still be readable via the `Read` tool). Defaults cover `.env`, `.envrc`, and `.env.<suffix>` (but not lookalikes like `.environment`), plus `wp-config.php`, `sftp.json`, `token.json`, `id_rsa`/`id_ed25519`/`id_ecdsa`, `.netrc`, `.git-credentials`, `.pgpass`, `*.pem/key/p12/pfx/ppk`, and the `_secrets`/`.credentials` directories. Candidates for other stacks: `.npmrc`, `.pypirc`, `.aws/`, `.kube/`.
+Edit **both** or the two paths diverge (a filename blocked in `cat` would still be readable via the `Read` tool). Defaults cover `.env`, `.envrc`, and `.env.<suffix>` (but not lookalikes like `.environment`), plus `wp-config.php`, `sftp.json`, `token.json`, `id_rsa`/`id_ed25519`/`id_ecdsa`, `.netrc`, `.git-credentials`, `.pgpass`, `*.pem/key/p12/pfx/ppk`, the `.aws/credentials`/`.aws/config`/`.kube/config`/`.docker/config.json` files, and the `_secrets`/`.credentials` directories. Candidates for other stacks: `.npmrc`, `.pypirc`.
+
+Bulk environment-variable dumps are a separate matcher, `ENV_DUMP` — it blocks `printenv`, bare `env` (including `env -0`, `sudo env`), `export -p`, and the PowerShell env drive (`gci Env:`, `Get-ChildItem Env:`), while allowing single named reads (`printenv PATH`, `Env:Path`), the `env KEY=val cmd` prefix runner, and `env --help`. It is matched inside interpreter `-c`/`-Command` bodies too (`bash -c "printenv"`, `powershell -Command "gci Env:"`).
 
 To recognize a new **read verb** (e.g. a house `showfile` alias — `cat`, `bat`/`batcat`, `less`, `Get-Content` etc. are already covered), add it to `DUMP_VERB`. The verb families (`DUMP_VERB`, `GREP_VERB`, `SCRIPT_VERB`, `GIT_DUMP`) each apply a different quote/operand policy — see below.
 
@@ -115,6 +125,8 @@ Five mechanisms, each of which exists because a review round or a real firing pr
    - *Script verbs* (`sed awk jq`) and *git dump* (`git show|diff|log|blame|cat-file|stash`, including forms with global options like `git -C repo diff`): quoted spans are dropped as program args / commit messages; only unquoted targets block. `sed -n '/sftp.json/p' file` and `git commit -m "…wp-config.php…"` are not reads; `sed -n '1,20p' wp-config.php` and `git show ref:wp-config.php` are.
 4. **Interpreter bodies.** `-c`/`-e`/`-Command` string bodies of `python node bash sh zsh pwsh powershell`, heredocs piped into interpreters, and here-strings (`bash <<< '…'`) get their own scan for read primitives (`open( readFile read_text ReadAllText readlines slurp …`) plus per-line verb checks. Heredocs fed to *non*-interpreters (e.g. `cat >> NOTES.md <<EOF`) are treated as prose.
 5. **Chain and continuation handling.** `\`-newline continuations are joined; segments split on single `&` as well as `&& ; |`; `$(cat .env)` matches via the widened verb prefix. The interpreter-body scan is gated behind a cheap `-c`/`-e`/`-Command` presence test and its gap is length-bounded, so a long pasted command cannot cause catastrophic regex backtracking.
+
+A sixth matcher handles **bulk environment-variable dumps**, which carry no filename for the mechanisms above to key on: it runs before the credential-token gate, on quote-masked segments (so a quoted mention like `echo "run printenv"` is inert) and inside interpreter `-c`/`-Command` bodies. It is scoped to whole-environment dumps only — single named-variable reads and the `env KEY=val cmd` prefix runner stay allowed — so its false-positive surface matches the rest of the tool.
 
 It also covers the `Read` and `Grep` tools directly (path-segment checks), so a `Grep` with `path: .../_secrets` blocks while grep *patterns* never can by construction.
 
@@ -136,7 +148,7 @@ Surveyed July 2026 by reading implementations, not READMEs (upstream code change
 node test/matrix.test.js
 ```
 
-88 cases (56 block / 31 allow / 1 performance), each one either a reproduction of a real false positive or an evasion found during review. The harness fails on any non-0/non-2 exit, spawn error, or timeout — a broken hook cannot pass silently. The performance case pushes a ~180 KB command through the hook and asserts it completes well under the timeout (no catastrophic backtracking). Run it after **any** edit to the hook; every mechanism above exists because its absence was reachable, and regressions are silent by nature.
+122 cases (75 block / 46 allow / 1 performance), each one either a reproduction of a real false positive or an evasion found during review. The harness fails on any non-0/non-2 exit, spawn error, or timeout — a broken hook cannot pass silently. The performance case pushes a ~180 KB command through the hook and asserts it completes well under the timeout (no catastrophic backtracking). Run it after **any** edit to the hook; every mechanism above exists because its absence was reachable, and regressions are silent by nature.
 
 ## Uninstall
 

@@ -1,7 +1,7 @@
 {
   "name": "claude-code-cred-guard",
-  "version": "1.0.0",
-  "description": "Zero-dependency Claude Code PreToolUse hook that blocks reading credential files into agent context, without false-positives on mere mentions.",
+  "version": "1.1.0",
+  "description": "Zero-dependency Claude Code PreToolUse hook that blocks reading credential files and bulk env-var dumps into agent context, without false-positives on mere mentions.",
   "keywords": [
     "claude-code",
     "hooks",
