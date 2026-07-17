@@ -1,0 +1,25 @@
+{
+  "name": "claude-code-cred-guard",
+  "version": "1.0.0",
+  "description": "Zero-dependency Claude Code PreToolUse hook that blocks reading credential files into agent context, without false-positives on mere mentions.",
+  "keywords": [
+    "claude-code",
+    "hooks",
+    "pretooluse",
+    "secrets",
+    "credentials",
+    "dotenv",
+    "security",
+    "guardrails"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node test/matrix.test.js"
+  },
+  "files": [
+    "hooks/block-cred-file-access.js"
+  ]
+}
