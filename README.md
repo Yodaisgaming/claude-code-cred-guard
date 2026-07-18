@@ -1,5 +1,9 @@
 # claude-code-cred-guard
 
+<p align="center">
+  <img src="assets/demo.svg" alt="cred-guard allowing reads of source files but blocking secret files and bulk env dumps, while still allowing filenames that are merely mentioned" width="100%">
+</p>
+
 A single-file, zero-dependency PreToolUse hook for [Claude Code](https://code.claude.com) that stops the agent from **reading credentials into its context** — credential files *and* bulk environment-variable dumps — without false-positives when those filenames are merely *mentioned* (search patterns, prose, notes, or invoking scripts that consume credentials machine-side).
 
 ```
