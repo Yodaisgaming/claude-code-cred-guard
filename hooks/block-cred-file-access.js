@@ -2,7 +2,7 @@
 const fs = require('fs');
 
 const CRED_TOKEN = /(?<![\w.-])(?:_secrets(?![\w.-])|\.credentials(?![\w.-])|sftp\.json(?![\w.])|wp-config\.php(?![\w.])|token\.json(?![\w.])|id_rsa(?![\w.])|id_ed25519(?![\w.])|id_ecdsa(?![\w.])|\.netrc(?![\w.])|\.git-credentials(?![\w.])|\.pgpass(?![\w.])|\.aws\/credentials(?![\w.-])|\.aws\/config(?![\w.-])|\.kube\/config(?![\w.-])|\.docker\/config\.json(?![\w.-])|\.env(?:\.[\w-]+|rc)?(?![\w]))|\.(?:pem|key|p12|pfx|ppk)(?![\w.])/i;
-const ENV_DUMP = /^(?:sudo\s+|command\s+)?(?:printenv|env)(?:\.exe)?(?:\s+-(?!(?:-?help|-?version|h|V)(?![\w-]))\S+)*\s*$|^export\s+-p\s*$|^(?:Get-ChildItem|Get-Item|gci|ls|dir)\b[^|;&]*(?<![\w-])env:(?![\\/]?\w)/i;
+const ENV_DUMP = /^(?:sudo\s+|command\s+)?(?:printenv|env)(?:\.exe)?(?:\s+(?:--unset(?:=\S+|\s+\S+)|-u\s+\S+|-(?!(?:-?help|-?version|h|V)(?![\w-]))\S+))*\s*$|^export\s+-p\s*$|^(?:Get-ChildItem|Get-Item|gci|ls|dir)\b[^|;&]*(?<![\w-])env:(?![\\/]?\w)/i;
 const DUMP_VERB = /(?:^|[\s;&|(`\/])(cat|bat|batcat|head|tail|less|more|nl|xxd|od|strings|type|Get-Content|gc)(?:\.exe)?\b/i;
 const GREP_VERB = /(?:^|[\s;&|(`\/])(grep|egrep|fgrep|rg|findstr|Select-String|sls)(?:\.exe)?\b/i;
 const SCRIPT_VERB = /(?:^|[\s;&|(`\/])(sed|awk|jq)(?:\.exe)?\b/i;

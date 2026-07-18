@@ -109,13 +109,13 @@ The credential filenames are defined in **two places** that must stay in sync (o
 
 Edit **both** or the two paths diverge (a filename blocked in `cat` would still be readable via the `Read` tool). Defaults cover `.env`, `.envrc`, and `.env.<suffix>` (but not lookalikes like `.environment`), plus `wp-config.php`, `sftp.json`, `token.json`, `id_rsa`/`id_ed25519`/`id_ecdsa`, `.netrc`, `.git-credentials`, `.pgpass`, `*.pem/key/p12/pfx/ppk`, the `.aws/credentials`/`.aws/config`/`.kube/config`/`.docker/config.json` files, and the `_secrets`/`.credentials` directories. Candidates for other stacks: `.npmrc`, `.pypirc`.
 
-Bulk environment-variable dumps are a separate matcher, `ENV_DUMP` — it blocks `printenv`, bare `env` (including `env -0`, `sudo env`), `export -p`, and the PowerShell env drive (`gci Env:`, `Get-ChildItem Env:`), while allowing single named reads (`printenv PATH`, `Env:Path`), the `env KEY=val cmd` prefix runner, and `env --help`. It is matched inside interpreter `-c`/`-Command` bodies too (`bash -c "printenv"`, `powershell -Command "gci Env:"`).
+Bulk environment-variable dumps are a separate matcher, `ENV_DUMP` — it blocks `printenv`, bare `env` (including `env -0`, `sudo env`, and the near-whole-environment `env -u NAME` / `env --unset NAME` forms), `export -p`, and the PowerShell env drive (`gci Env:`, `Get-ChildItem Env:`), while allowing single named reads (`printenv PATH`, `Env:Path`), the `env KEY=val cmd` prefix runner (with or without `-u`), and `env --help`. It is matched inside interpreter `-c`/`-Command` bodies too (`bash -c "printenv"`, `powershell -Command "gci Env:"`).
 
 To recognize a new **read verb** (e.g. a house `showfile` alias — `cat`, `bat`/`batcat`, `less`, `Get-Content` etc. are already covered), add it to `DUMP_VERB`. The verb families (`DUMP_VERB`, `GREP_VERB`, `SCRIPT_VERB`, `GIT_DUMP`) each apply a different quote/operand policy — see below.
 
 ## How it works
 
-Five mechanisms, each of which exists because a review round or a real firing proved it necessary:
+Six mechanisms, each of which exists because a review round or a real firing proved it necessary:
 
 1. **Quote masking before segmentation.** All quoted spans (escape-aware) are replaced by placeholders *before* the command is split into segments on `| ; & newline`. Without this, the pipe inside `grep -n "a|b" file` corrupts parsing.
 2. **Windows normalization.** Every token/path test runs on backslash-to-slash normalized text, so `type ..\wp-config.php` and `C:\Users\me\.credentials\token.json` are caught. This also mangles regex escapes like `sftp\.json`, so those stop matching the token — correct, since they are search patterns.
@@ -126,7 +126,7 @@ Five mechanisms, each of which exists because a review round or a real firing pr
 4. **Interpreter bodies.** `-c`/`-e`/`-Command` string bodies of `python node bash sh zsh pwsh powershell`, heredocs piped into interpreters, and here-strings (`bash <<< '…'`) get their own scan for read primitives (`open( readFile read_text ReadAllText readlines slurp …`) plus per-line verb checks. Heredocs fed to *non*-interpreters (e.g. `cat >> NOTES.md <<EOF`) are treated as prose.
 5. **Chain and continuation handling.** `\`-newline continuations are joined; segments split on single `&` as well as `&& ; |`; `$(cat .env)` matches via the widened verb prefix. The interpreter-body scan is gated behind a cheap `-c`/`-e`/`-Command` presence test and its gap is length-bounded, so a long pasted command cannot cause catastrophic regex backtracking.
 
-A sixth matcher handles **bulk environment-variable dumps**, which carry no filename for the mechanisms above to key on: it runs before the credential-token gate, on quote-masked segments (so a quoted mention like `echo "run printenv"` is inert) and inside interpreter `-c`/`-Command` bodies. It is scoped to whole-environment dumps only — single named-variable reads and the `env KEY=val cmd` prefix runner stay allowed — so its false-positive surface matches the rest of the tool.
+6. **Bulk environment-variable dumps.** These carry no filename for the mechanisms above to key on, so a dedicated matcher runs before the credential-token gate, on quote-masked segments (so a quoted mention like `echo "run printenv"` is inert) and inside interpreter `-c`/`-Command` bodies. It is scoped to whole-environment dumps only — single named-variable reads and the `env KEY=val cmd` prefix runner stay allowed — so its false-positive surface matches the rest of the tool. Flag-only invocations count as dumps, including the near-whole-environment `env -u NAME` / `env --unset NAME` forms; `env -u NAME cmd` still runs.
 
 It also covers the `Read` and `Grep` tools directly (path-segment checks), so a `Grep` with `path: .../_secrets` blocks while grep *patterns* never can by construction.
 
@@ -148,7 +148,7 @@ Surveyed July 2026 by reading implementations, not READMEs (upstream code change
 node test/matrix.test.js
 ```
 
-122 cases (75 block / 46 allow / 1 performance), each one either a reproduction of a real false positive or an evasion found during review. The harness fails on any non-0/non-2 exit, spawn error, or timeout — a broken hook cannot pass silently. The performance case pushes a ~180 KB command through the hook and asserts it completes well under the timeout (no catastrophic backtracking). Run it after **any** edit to the hook; every mechanism above exists because its absence was reachable, and regressions are silent by nature.
+127 cases (79 block / 47 allow / 1 performance), each one either a reproduction of a real false positive or an evasion found during review. The harness fails on any non-0/non-2 exit, spawn error, or timeout — a broken hook cannot pass silently. The performance case pushes a ~180 KB command through the hook and asserts it completes well under the timeout (no catastrophic backtracking). Run it after **any** edit to the hook; every mechanism above exists because its absence was reachable, and regressions are silent by nature.
 
 ## Uninstall
 

@@ -78,6 +78,10 @@ const CASES = [
   ['BLOCK', 'sudo env dump', bash('sudo env')],
   ['BLOCK', 'quoted powershell env drive', bash('Get-ChildItem "Env:"')],
   ['BLOCK', 'bash -c printenv body', bash('bash -c "printenv"')],
+  ['BLOCK', 'env -u residual dump', bash('env -u PATH')],
+  ['BLOCK', 'env --unset= residual dump', bash('env --unset=PATH')],
+  ['BLOCK', 'env --unset spaced residual dump', bash('env --unset PATH')],
+  ['BLOCK', 'sudo env -u residual dump', bash('sudo env -u HOME')],
   ['BLOCK', 'powershell -Command gci env body', bash('powershell -Command "gci Env:"')],
 
   ['ALLOW', 'printenv single non-secret var', bash('printenv PATH')],
@@ -90,6 +94,7 @@ const CASES = [
   ['ALLOW', 'aws config-notes hyphen suffix', bash('cat ~/.aws/config-notes.md')],
   ['ALLOW', 'nested aws example config not direct', { tool_name: 'Read', tool_input: { file_path: '/repo/docs/.aws/examples/config' } }],
   ['ALLOW', 'env clears then runs command', bash('env -i node app.js')],
+  ['ALLOW', 'env -u prefix runs command', bash('env -u NODE_OPTIONS npm test')],
   ['ALLOW', 'envsubst not env dump', bash('envsubst < template.txt')],
   ['ALLOW', 'env help flag', bash('env --help')],
   ['ALLOW', 'printenv version flag', bash('printenv --version')],
