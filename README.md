@@ -119,7 +119,7 @@ To recognize a new **read verb** (e.g. a house `showfile` alias — `cat`, `bat`
 
 ## How it works
 
-Six mechanisms, each of which exists because a review round or a real firing proved it necessary:
+Six mechanisms:
 
 1. **Quote masking before segmentation.** All quoted spans (escape-aware) are replaced by placeholders *before* the command is split into segments on `| ; & newline`. Without this, the pipe inside `grep -n "a|b" file` corrupts parsing.
 2. **Windows normalization.** Every token/path test runs on backslash-to-slash normalized text, so `type ..\wp-config.php` and `C:\Users\me\.credentials\token.json` are caught. This also mangles regex escapes like `sftp\.json`, so those stop matching the token — correct, since they are search patterns.
@@ -148,7 +148,7 @@ Known accepted residuals, all rare: `sed`/`awk`/`jq` with a **quoted** credentia
 node test/matrix.test.js
 ```
 
-127 cases (79 block / 47 allow / 1 performance), each one either a reproduction of a real false positive or an evasion found during review. The harness fails on any non-0/non-2 exit, spawn error, or timeout — a broken hook cannot pass silently. The performance case pushes a ~180 KB command through the hook and asserts it completes well under the timeout (no catastrophic backtracking). Run it after **any** edit to the hook; every mechanism above exists because its absence was reachable, and regressions are silent by nature.
+127 cases (79 block / 47 allow / 1 performance), each one either a reproduction of a real false positive or an evasion it needs to catch. The harness fails on any non-0/non-2 exit, spawn error, or timeout — a broken hook cannot pass silently. The performance case pushes a ~180 KB command through the hook and asserts it completes well under the timeout (no catastrophic backtracking). Run it after **any** edit to the hook; every mechanism above exists because its absence was reachable, and regressions are silent by nature.
 
 ## Uninstall
 
@@ -156,7 +156,7 @@ Remove the hook entry from your `settings.json` `PreToolUse` array and restart C
 
 ## Provenance
 
-I built this after classifying real firings of a naive predecessor on my own setup, which showed that most firings were false positives on mere mentions, and hardened it over several rounds of adversarial cross-model review. Those firing numbers come from my own deployment and are not reproducible from this repo. Treat them as the motivation for the design, not a benchmark. What *is* reproducible is the test matrix: every claimed behavior above has a corresponding case in `test/matrix.test.js`.
+I built this after classifying real firings of a naive predecessor on my own setup, which showed that most firings were false positives on mere mentions, and hardened it against a matrix of real firings and evasion attempts. Those firing numbers come from my own deployment and are not reproducible from this repo. Treat them as the motivation for the design, not a benchmark. What *is* reproducible is the test matrix: every claimed behavior above has a corresponding case in `test/matrix.test.js`.
 
 ## License
 
