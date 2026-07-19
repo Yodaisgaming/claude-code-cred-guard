@@ -142,10 +142,6 @@ It also covers the `Read` and `Grep` tools directly (path-segment checks), so a 
 
 Known accepted residuals, all rare: `sed`/`awk`/`jq` with a **quoted** credential path as the target false-allows (the quoted argument is treated as the program/filter, not a file); and unknown read verbs (`cp .env /tmp`, `perl -ne … cred`, `dd if=…`) pass, since the guard keys off a known verb set rather than default-denying everything.
 
-## How this compares to the field
-
-Surveyed July 2026 by reading implementations, not READMEs (upstream code changes, so treat this as a snapshot). The dominant public pattern — including [claude-code-hooks-mastery](https://github.com/disler/claude-code-hooks-mastery) and the canonical docs example most repos copy — is a substring/regex-anywhere test over the raw command or the declared file path: it blocks prose and search patterns, misses interpreter bodies and Windows paths, and covers only `.env`. Several "security guardrail" kits protect only against *writing/committing* secrets and leave `cat .env` open. The two more serious efforts take different corners: [claude-code-sentinel](https://github.com/gltorres/claude-code-sentinel) has a real bash tokenizer and path policy (broad, but no interpreter-body scan and more ask-prompts), and [narthex](https://github.com/fitz2882/narthex) blocks exfiltration *shapes* while allowing plain reads by design. This hook's niche is the combination none of them target: read-side precision, mention-tolerance, interpreter-body coverage, and Windows path handling.
-
 ## Test
 
 ```
@@ -160,7 +156,7 @@ Remove the hook entry from your `settings.json` `PreToolUse` array and restart C
 
 ## Provenance
 
-The design was shaped by classifying real firings of a naive predecessor (which surfaced that most firings were false positives on mentions), then hardened through several rounds of adversarial review by a second model acting as a red-team reviewer. Those numbers come from the author's own deployment and are not independently reproducible from this repo — treat them as the motivation for the design, not a benchmark. What *is* reproducible is the test matrix: every claimed behavior above has a corresponding case in `test/matrix.test.js`.
+I built this after classifying real firings of a naive predecessor on my own setup, which showed that most firings were false positives on mere mentions, and hardened it over several rounds of adversarial cross-model review. Those firing numbers come from my own deployment and are not reproducible from this repo. Treat them as the motivation for the design, not a benchmark. What *is* reproducible is the test matrix: every claimed behavior above has a corresponding case in `test/matrix.test.js`.
 
 ## License
 
